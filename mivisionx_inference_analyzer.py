@@ -67,7 +67,8 @@ class annieObjectWrapper():
 	def __init__(self, annpythonlib, weightsfile, modeType):
 		self.api = AnnAPI(annpythonlib, modeType)
 		self.hdl = self.api.annCreateInference(weightsfile.encode('utf-8'))
-		if(modeType == 1):
+
+		if modeType == 1:
 			input_info,output_info,empty = self.api.annQueryInference().decode("utf-8").split(';')
 			input,name,n_i,c_i,h_i,w_i = input_info.split(',')
 			outputCount = output_info.split(",")
@@ -78,16 +79,16 @@ class annieObjectWrapper():
 				output,opName,n_o,c_o= output_info.split(',')
 				h_o = '1'
 				w_o  = '1'
-		elif(modeType == 2):
+		elif modeType == 2:
 			inp_out_list = self.api.annQueryInference().decode("utf-8").split(';')
-	        str_count = len(inp_out_list)
-	        self.out_list = []
-	        for i in range(str_count-1):
-	            if (inp_out_list[i].split(',')[0] == 'input'):
-	                input,name,n_i,c_i,h_i,w_i = inp_out_list[i].split(',')
-	            else:
-                	self.out_list.append([int(j) for j in inp_out_list[i].split(',')[2:]])
-		
+			str_count = len(inp_out_list)
+			self.out_list = []
+			for i in range(str_count-1):
+				if (inp_out_list[i].split(',')[0] == 'input'):
+					input,name,n_i,c_i,h_i,w_i = inp_out_list[i].split(',')
+				else:
+					self.out_list.append([int(j) for j in inp_out_list[i].split(',')[2:]])
+
 		if modeType == 1:
 			self.dim = (int(w_i),int(h_i))
 			self.outputDim = (int(n_o),int(c_o),int(h_o),int(w_o))
@@ -348,7 +349,7 @@ if __name__ == '__main__':
 		fp16 = (str)(panel.fp16)
 		replaceModel = (str)(panel.replace)
 		verbose = (str)(panel.verbose)
-		mode = str(2)
+		mode = str(1)
 	else:
 		parser = argparse.ArgumentParser()
 		parser.add_argument('--model_format',		type=str, required=True,	help='pre-trained model format, options:caffe/onnx/nnef [required]')
@@ -366,7 +367,7 @@ if __name__ == '__main__':
 		parser.add_argument('--fp16',				type=str, default='no',		help='quantize to FP16 			[optional - default:no]')
 		parser.add_argument('--replace',			type=str, default='no',		help='replace/overwrite model   [optional - default:no]')
 		parser.add_argument('--verbose',			type=str, default='no',		help='verbose                   [optional - default:no]')
-		parser.add_argument('--mode',				type=str, default='1',		help='1:classification;2:YOLO_V3    [optional - default:2]')
+		parser.add_argument('--mode',				type=str, default='1',		help='1:classification;2:YOLO_V3    [optional - default:1]')
 		args = parser.parse_args()
 		
 		# get arguments
@@ -535,23 +536,24 @@ if __name__ == '__main__':
 	classifier = annieObjectWrapper(pythonLib, weightsFile, modeType)
 
 	# check for image val text
-	if modeType == 1: 
-		totalImages = 0;
-		if(imageVal != ''):
-			if (not os.path.isfile(imageValText)):
-				print("\nImage Validation Text not found, check argument --image_val\n")
-				quit()
-			else:
-				fp = open(imageValText, 'r')
-				imageValidation = fp.readlines()
-				fp.close()
-				totalImages = len(imageValidation)
-		else:
-			print("\nFlow without Image Validation Text not implemented, pass argument --image_val\n")
-			quit()
-	elif modeType == 2:
-		totalImages = len(os.listdir(inputImageDir))
+	totalImages = 0;
+	if(imageVal == ''):
+		print("\nFlow without Image Validation Text..Creating a file with no ground truths\n")
 		imageList = os.listdir(inputImageDir)
+		imageList.sort()
+		imageValText = os.getcwd() + '/imageValTxt.txt'
+		fp = open(imageValText , 'w')
+		for imageFile in imageList:
+			fp.write(imageFile + " -1" + "\n")
+
+	if (not os.path.isfile(imageValText)):
+		print("\nImage Validation Text not found, check argument --image_val\n")
+		quit()
+	else:
+		fp = open(imageValText, 'r')
+		imageValidation = fp.readlines()
+		fp.close()
+		totalImages = len(imageValidation)
 
 	# original std out location 
 	orig_stdout = sys.stdout
@@ -564,11 +566,14 @@ if __name__ == '__main__':
 	# process images
 	correctTop5 = 0; correctTop1 = 0; wrong = 0; noGroundTruth = 0;
 	for x in range(totalImages):
-		if modeType == 1:
+		if imageVal != '':
 			imageFileName,grountTruth = imageValidation[x].decode("utf-8").split(' ')
 			groundTruthIndex = int(grountTruth)
 			imageFile = os.path.expanduser(inputImageDir+'/'+imageFileName)
-		elif modeType == 2:
+		else:
+			imageFileName = imageList[x]
+			grountTruth = imageValidation[x].split(' ')[1]
+			groundTruthIndex = int(grountTruth)
 			imageFile = os.path.expanduser(inputImageDir+'/'+imageList[x])
 
 		if (not os.path.isfile(imageFile)):
@@ -612,91 +617,14 @@ if __name__ == '__main__':
 				if(verbosePrint):
 					print '%30s' % 'Processed display in ', str((end - start)*1000), 'ms\n'
 
-				# write image results to a file
-				start = time.time()
-				sys.stdout = open(finalImageResultsFile,'a')
-				print(imageFileName+','+str(groundTruthIndex)+','+str(topIndex[4])+
-					','+str(topIndex[3])+','+str(topIndex[2])+','+str(topIndex[1])+','+str(topIndex[0])+','+str(topProb[4])+
-					','+str(topProb[3])+','+str(topProb[2])+','+str(topProb[1])+','+str(topProb[0]))
-				sys.stdout = orig_stdout
-				end = time.time()
-				if(verbosePrint):
-					print '%30s' % 'Image result saved in ', str((end - start)*1000), 'ms'
-
-				# create progress image
-				start = time.time()
-				progressImage = np.zeros((400, 500, 3), dtype="uint8")
-				progressImage.fill(255)
-				cv2.putText(progressImage, 'Inference Analyzer Progress', (25,  25),cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
-				size = cv2.getTextSize(modelName, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-				t_width = size[0][0]
-				t_height = size[0][1]
-				headerX_start = int(250 -(t_width/2))
-				cv2.putText(progressImage,modelName,(headerX_start,t_height+(20+40)),cv2.FONT_HERSHEY_SIMPLEX,0.7,(0,0,0),2)
-				txt = 'Processed: '+str(x+1)+' of '+str(totalImages)
-				size = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-				cv2.putText(progressImage,txt,(50,t_height+(60+40)),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
-				# progress bar
-				cv2.rectangle(progressImage, (50,150), (450,180), (192,192,192), -1)
-				progressWidth = int(50+ ((400*(x+1))/totalImages))
-				cv2.rectangle(progressImage, (50,150), (progressWidth,180), (255,204,153), -1)
-				percentage = int(((x+1)/float(totalImages))*100)
-				pTxt = 'progress: '+str(percentage)+'%'
-				cv2.putText(progressImage,pTxt,(175,170),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
-
-				if(groundTruthIndex == topIndex[4]):
-					correctTop1 = correctTop1 + 1
-					correctTop5 = correctTop5 + 1
-				elif(groundTruthIndex == topIndex[3] or groundTruthIndex == topIndex[2] or groundTruthIndex == topIndex[1] or groundTruthIndex == topIndex[0]):
-					correctTop5 = correctTop5 + 1
-				elif(groundTruthIndex == -1):
-					noGroundTruth = noGroundTruth + 1
-				else:
-					wrong = wrong + 1
-
-				# top 1 progress
-				cv2.rectangle(progressImage, (50,200), (450,230), (192,192,192), -1)
-				progressWidth = int(50 + ((400*correctTop1)/totalImages))
-				cv2.rectangle(progressImage, (50,200), (progressWidth,230), (0,153,0), -1)
-				percentage = int((correctTop1/float(totalImages))*100)
-				pTxt = 'Top1: '+str(percentage)+'%'
-				cv2.putText(progressImage,pTxt,(195,220),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
-				# top 5 progress
-				cv2.rectangle(progressImage, (50,250), (450,280), (192,192,192), -1)
-				progressWidth = int(50+ ((400*correctTop5)/totalImages))
-				cv2.rectangle(progressImage, (50,250), (progressWidth,280), (0,255,0), -1)
-				percentage = int((correctTop5/float(totalImages))*100)
-				pTxt = 'Top5: '+str(percentage)+'%'
-				cv2.putText(progressImage,pTxt,(195,270),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
-				# wrong progress
-				cv2.rectangle(progressImage, (50,300), (450,330), (192,192,192), -1)
-				progressWidth = int(50+ ((400*wrong)/totalImages))
-				cv2.rectangle(progressImage, (50,300), (progressWidth,330), (0,0,255), -1)
-				percentage = int((wrong/float(totalImages))*100)
-				pTxt = 'Mismatch: '+str(percentage)+'%'
-				cv2.putText(progressImage,pTxt,(175,320),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
-				# no ground truth progress
-				cv2.rectangle(progressImage, (50,350), (450,380), (192,192,192), -1)
-				progressWidth = int(50+ ((400*noGroundTruth)/totalImages))
-				cv2.rectangle(progressImage, (50,350), (progressWidth,380), (0,255,255), -1)
-				percentage = int((noGroundTruth/float(totalImages))*100)
-				pTxt = 'Ground Truth unavailable: '+str(percentage)+'%'
-				cv2.putText(progressImage,pTxt,(125,370),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
-				
-				cv2.imshow(windowProgress, progressImage)
-				end = time.time()
-				if(verbosePrint):
-					print '%30s' % 'Progress image created in ', str((end - start)*1000), 'ms'
-
-				# exit on ESC
-				key = cv2.waitKey()
-				if key == 27: 
-					break
 			elif modeType == 2:
 				rects = classifier.rects_prepare(output)
 				mapping = classifier.get_classname_mapping(labelText)
 
 				scaling_factor = min(1.0, float(h_i) / float(frame.shape[1]))
+				#temporary fix
+				topIndex = [-2,-2,-2,-2,-2]
+				topProb = [-2,-2,-2,-2,-2]
 
 				for pt1, pt2, cls, prob in rects:
 					pt1[0] -= (h_i - scaling_factor*frame.shape[1])/2
@@ -719,15 +647,90 @@ if __name__ == '__main__':
 					cv2.putText(frame, label, (pt1[0], t_size[1] + 4 + pt1[1]), cv2.FONT_HERSHEY_PLAIN,
 			                    cv2.FONT_HERSHEY_PLAIN, 1, 1, 2)
 				cv2.imshow(windowInput, frame)
-				key = cv2.waitKey(150)
-				if key == 27: 
-					break
-				elif key == 32:
-					newKey = cv2.waitKey(0)
-					if newKey == 32:
-						continue
-				#cv2.waitKey(150)
+				
+			key = cv2.waitKey(150)
+			if key == 27: 
+				break
+			elif key == 32:
+				newKey = cv2.waitKey(0)
+				if newKey == 32:
+					continue
 
+			# write image results to a file
+			start = time.time()
+			sys.stdout = open(finalImageResultsFile,'a')
+			print(imageFileName+','+str(groundTruthIndex)+','+str(topIndex[4])+
+				','+str(topIndex[3])+','+str(topIndex[2])+','+str(topIndex[1])+','+str(topIndex[0])+','+str(topProb[4])+
+				','+str(topProb[3])+','+str(topProb[2])+','+str(topProb[1])+','+str(topProb[0]))
+			sys.stdout = orig_stdout
+			end = time.time()
+			if(verbosePrint):
+				print '%30s' % 'Image result saved in ', str((end - start)*1000), 'ms'
+
+			# create progress image
+			start = time.time()
+			progressImage = np.zeros((400, 500, 3), dtype="uint8")
+			progressImage.fill(255)
+			cv2.putText(progressImage, 'Inference Analyzer Progress', (25,  25),cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
+			size = cv2.getTextSize(modelName, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+			t_width = size[0][0]
+			t_height = size[0][1]
+			headerX_start = int(250 -(t_width/2))
+			cv2.putText(progressImage,modelName,(headerX_start,t_height+(20+40)),cv2.FONT_HERSHEY_SIMPLEX,0.7,(0,0,0),2)
+			txt = 'Processed: '+str(x+1)+' of '+str(totalImages)
+			size = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+			cv2.putText(progressImage,txt,(50,t_height+(60+40)),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
+			# progress bar
+			cv2.rectangle(progressImage, (50,150), (450,180), (192,192,192), -1)
+			progressWidth = int(50+ ((400*(x+1))/totalImages))
+			cv2.rectangle(progressImage, (50,150), (progressWidth,180), (255,204,153), -1)
+			percentage = int(((x+1)/float(totalImages))*100)
+			pTxt = 'progress: '+str(percentage)+'%'
+			cv2.putText(progressImage,pTxt,(175,170),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
+
+			if(groundTruthIndex == topIndex[4]):
+				correctTop1 = correctTop1 + 1
+				correctTop5 = correctTop5 + 1
+			elif(groundTruthIndex == topIndex[3] or groundTruthIndex == topIndex[2] or groundTruthIndex == topIndex[1] or groundTruthIndex == topIndex[0]):
+				correctTop5 = correctTop5 + 1
+			elif(groundTruthIndex == -1):
+				noGroundTruth = noGroundTruth + 1
+			else:
+				wrong = wrong + 1
+
+			# top 1 progress
+			cv2.rectangle(progressImage, (50,200), (450,230), (192,192,192), -1)
+			progressWidth = int(50 + ((400*correctTop1)/totalImages))
+			cv2.rectangle(progressImage, (50,200), (progressWidth,230), (0,153,0), -1)
+			percentage = int((correctTop1/float(totalImages))*100)
+			pTxt = 'Top1: '+str(percentage)+'%'
+			cv2.putText(progressImage,pTxt,(195,220),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
+			# top 5 progress
+			cv2.rectangle(progressImage, (50,250), (450,280), (192,192,192), -1)
+			progressWidth = int(50+ ((400*correctTop5)/totalImages))
+			cv2.rectangle(progressImage, (50,250), (progressWidth,280), (0,255,0), -1)
+			percentage = int((correctTop5/float(totalImages))*100)
+			pTxt = 'Top5: '+str(percentage)+'%'
+			cv2.putText(progressImage,pTxt,(195,270),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
+			# wrong progress
+			cv2.rectangle(progressImage, (50,300), (450,330), (192,192,192), -1)
+			progressWidth = int(50+ ((400*wrong)/totalImages))
+			cv2.rectangle(progressImage, (50,300), (progressWidth,330), (0,0,255), -1)
+			percentage = int((wrong/float(totalImages))*100)
+			pTxt = 'Mismatch: '+str(percentage)+'%'
+			cv2.putText(progressImage,pTxt,(175,320),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
+			# no ground truth progress
+			cv2.rectangle(progressImage, (50,350), (450,380), (192,192,192), -1)
+			progressWidth = int(50+ ((400*noGroundTruth)/totalImages))
+			cv2.rectangle(progressImage, (50,350), (progressWidth,380), (0,255,255), -1)
+			percentage = int((noGroundTruth/float(totalImages))*100)
+			pTxt = 'Ground Truth unavailable: '+str(percentage)+'%'
+			cv2.putText(progressImage,pTxt,(125,370),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,0),1)
+			
+			cv2.imshow(windowProgress, progressImage)
+			end = time.time()
+			if(verbosePrint):
+				print '%30s' % 'Progress image created in ', str((end - start)*1000), 'ms'
 	# Inference Analyzer Successful
 	print("\nSUCCESS: Images Inferenced with the Model\n")
 	cv2.destroyWindow(windowInput)
