@@ -349,7 +349,7 @@ if __name__ == '__main__':
 		fp16 = (str)(panel.fp16)
 		replaceModel = (str)(panel.replace)
 		verbose = (str)(panel.verbose)
-		mode = str(1)
+		mode = str(2)
 	else:
 		parser = argparse.ArgumentParser()
 		parser.add_argument('--model_format',		type=str, required=True,	help='pre-trained model format, options:caffe/onnx/nnef [required]')
