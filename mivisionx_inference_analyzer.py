@@ -398,6 +398,7 @@ if __name__ == '__main__':
 	# set paths
 	modelCompilerPath = '/opt/rocm/mivisionx/model_compiler/python'
 	ADATPath= '/opt/rocm/mivisionx/toolkit/analysis_and_visualization/classification'
+	ADATPathDetection= '/opt/rocm/mivisionx/toolkit/analysis_and_visualization/bounding_box'
 	setupDir = '~/.mivisionx-inference-analyzer'
 	analyzerDir = os.path.expanduser(setupDir)
 	modelDir = analyzerDir+'/'+modelName+'_dir'
@@ -702,33 +703,34 @@ if __name__ == '__main__':
 				rects = classifier.rects_prepare(output)
 				mapping = classifier.get_classname_mapping(labelText)
 
-				
-					
-				
-				# initialize the result image
+				# initialize the result imagef
 				resultImage = np.zeros((250, 525, 3), dtype="uint8")
 				resultImage.fill(255)
 				cv2.putText(resultImage, 'MIVisionX Object Detection', (25,  25),cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
 				topK = 1
 				# write image results to a file
-				start = time.time()
-				sys.stdout = open(finalImageResultsFile,'a')
-				print(imageFileName+',')
+				
+				filetxt = imageFileName+','
 				for i in range(len(rects)):
 					txt = mapping[rects[i][2]]
 					conf = rects[i][3]
-					print(str(txt)+','+str(int(round((conf*100), 0))))
+					filetxt = filetxt+str(txt)+",Unknown,"+str(conf)
 					txt = txt+' '+str(int(round((conf*100), 0)))+'%' 
 					size = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
 					t_height = size[0][1]
 					textColor = (colors[0])
 					cv2.putText(resultImage,txt,(45,t_height+(topK*30+40)),cv2.FONT_HERSHEY_SIMPLEX,0.5,textColor,1)
 					topK = topK + 1
-				print('\n')
+
+				#write results into file
+				start = time.time()
+				sys.stdout = open(finalImageResultsFile,'a')
+				print(filetxt)
 				sys.stdout = orig_stdout
 				end = time.time()
 				if(verbosePrint):
 					print '%30s' % 'Image result saved in ', str((end - start)*1000), 'ms'
+				
 				cv2.imshow(windowResult, resultImage)
 				end = time.time()
 				if(verbosePrint):
@@ -844,13 +846,18 @@ if __name__ == '__main__':
 	print("\nADAT tool called to create the analysis toolkit\n")
 	if(not os.path.exists(adatOutputDir)):
 		os.system('mkdir ' + adatOutputDir)
-	
-	if(hierarchy == ''):
-		os.system('python '+ADATPath+'/generate-visualization.py --inference_results '+finalImageResultsFile+
-		' --image_dir '+inputImageDir+' --label '+labelText+' --model_name '+modelName+' --output_dir '+adatOutputDir+' --output_name '+modelName+'-ADAT')
-	else:
-		os.system('python '+ADATPath+'/generate-visualization.py --inference_results '+finalImageResultsFile+
-		' --image_dir '+inputImageDir+' --label '+labelText+' --hierarchy '+hierarchyText+' --model_name '+modelName+' --output_dir '+adatOutputDir+' --output_name '+modelName+'-ADAT')
+
+	if modeType == 1:
+		if(hierarchy == ''):
+			os.system('python '+ADATPath+'/generate-visualization.py --inference_results '+finalImageResultsFile+
+			' --image_dir '+inputImageDir+' --label '+labelText+' --model_name '+modelName+' --output_dir '+adatOutputDir+' --output_name '+modelName+'-ADAT')
+		else:
+			os.system('python '+ADATPath+'/generate-visualization.py --inference_results '+finalImageResultsFile+
+			' --image_dir '+inputImageDir+' --label '+labelText+' --hierarchy '+hierarchyText+' --model_name '+modelName+' --output_dir '+adatOutputDir+' --output_name '+modelName+'-ADAT')
+	elif modeType == 2:
+		os.system('python '+ADATPathDetection+'/generate-visualization.py -i '+finalImageResultsFile+ ' -d '+inputImageDir+' -l '+labelText
+		+' -f '+adatOutputDir+'/'+modelName+' -o '+adatOutputDir+' -g sample/groundTruthFile.csv -t sample/boundingBoxToolFile.csv')
+
 	print("\nSUCCESS: Image Analysis Toolkit Created\n")
 	print("Press ESC to exit or close progess window\n")
 
